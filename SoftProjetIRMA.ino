@@ -13,57 +13,50 @@ static const uint8_t BRAKE_A = 9;   // Motor A brake
 static const uint8_t PWM_B   = 11;  // Motor B speed (PWM)
 static const uint8_t DIR_B   = 13;  // Motor B direction
 static const uint8_t BRAKE_B = 8;   // Motor B brake
+int counter_pas =0;
 // +*****************************Servo pin ***************************/
 static const uint8_t SERVO_PIN = 5;
+bool Shutter_Open = 0;
 /*******************************CAPTEURS*****************************/
-static const uint8_t cap_1  = 2;
-static const uint8_t cap_2  = 4;
+static const uint8_t cap_REV  = 2;
+static const uint8_t cap_FWD  = 4;
 /****************************bouton***************************/
 static const uint8_t Btn_Small_FWD  = A3;
-static const uint8_t Btn_Small_REV  = D6;
-static const uint8_t Btn_Big_FWD  = A0;
+static const uint8_t Btn_Small_REV  = 6;
+static const uint8_t Btn_Big_FWD  = 10;
 static const uint8_t Btn_Big_REV  = A2;
-static const uint8_t Btn_Ok  = 7;
+static const uint8_t Btn_Shutter  = 7;
+static const uint8_t Btn_Reset  = ;
 
 /*****************************************************************/
 /*=====================================================
                   capteur control                
 =====================================================*/
 void cap_init(){
-  pinMode(cap_1,INPUT_PULLUP);
-  pinMode(cap_2,INPUT_PULLUP);
+  pinMode(cap_REV,INPUT_PULLUP);
+  pinMode(cap_FWD,INPUT_PULLUP);
 }
-bool is_limit_cap1_pressed() {
-  return digitalRead(cap_1);
+bool is_limit_capREV_pressed() {
+  return digitalRead(cap_REV)==LOW;
 }
-bool is_limit_cap2_pressed() {
-  return digitalRead(cap_2);
+bool is_limit_capFWD_pressed() {
+  return digitalRead(cap_FWD)==LOW;
 }
 /* =========================================================
    bouton CONTROL
    ========================================================= */
 void Init_Btn(){
-  pinMode(BTN_BIG_FWD,   INPUT_PULLUP);
-  pinMode(BTN_BIG_REV,   INPUT_PULLUP);
-  pinMode(BTN_SMALL_FWD, INPUT_PULLUP);
-  pinMode(BTN_SMALL_REV, INPUT_PULLUP);
-  pinMode(BTN_CONFIRM,   INPUT_PULLUP);
+  pinMode(Btn_Big_FWD,   INPUT_PULLUP);
+  pinMode(Btn_Big_REV,   INPUT_PULLUP);
+  pinMode(Btn_Small_FWD, INPUT_PULLUP);
+  pinMode(Btn_Small_REV, INPUT_PULLUP);
+  pinMode(Btn_Shutter,   INPUT_PULLUP);
 }
 bool btn_pressed(int btn){
-  return digitalRead(btn)== LOW;
+  return (digitalRead(btn)==LOW);
 }
-int counter pas(){
-  int pas =0;
-  if btn_pressed(Btn_Small_FWD){
-    pas +=1;}
-  if btn_pressed(Btn_Small_REV){
-    pas -=1;}
-  if btn_pressed(Btn_Big_FWD){
-    pas +=17;}
-  if btn_pressed(Btn_Big_REV){
-    pas -=17;}
-  return pas ;    
-}
+
+
 /* =========================================================
    SERVO CONTROL
    ========================================================= */
@@ -133,15 +126,80 @@ void stepper_one_step(StepDir dir, uint8_t pwm, uint16_t dt_ms){
   delay(dt_ms);
 }
 void stepper_motor_control_pas(StepDir dir, uint8_t pwm, uint16_t dt_ms,int pas){
-  for (int i = 0; i < pas; i++){
-   //stepper_step_forward(200, 1000);
-   if(is_limit_cap1_pressed()){
-    stepper_one_step(dir, pwm, dt_ms);
-    //delay(3000);
-   }else{
-    stepper_stop();
-   }
+  if(dir==STEP_FWD){
+    for (int i = 0; i < pas; i++){
+     //stepper_step_forward(200, 1000);
+      if(is_limit_capFWD_pressed()==0){
+        stepper_one_step(dir, pwm, dt_ms);
+        //delay(3000);
+       }else{
+        stepper_stop();
+        break;}}
+  }else{
+    for (int i = 0; i < pas; i++){
+     //stepper_step_forward(200, 1000);
+      if(is_limit_capREV_pressed()==0){
+        stepper_one_step(dir, pwm, dt_ms);
+        //delay(3000);
+       }else{
+        stepper_stop();
+        break;}}
   }
+  stepper_stop();
+}
+/*==================================================================
+    logique
+====================================================================*/ 
+bool pressed_edge(uint8_t pin) {
+  static uint8_t last[30]; 
+  uint8_t cur = digitalRead(pin);
+  bool edge = (last[pin] == HIGH && cur == LOW);
+  last[pin] = cur;
+  delay(20); 
+  return edge;
+}  
+int button_control_stepper_motor(int pas)
+{
+  if(pressed_edge(Btn_Big_FWD))
+  {
+    stepper_motor_control_pas(STEP_FWD,200,20,17);
+    pas+=17;
+  }
+  else if(pressed_edge(Btn_Big_REV))
+  {
+    stepper_motor_control_pas(STEP_REV,200,20,17);
+    pas-=17;
+  }
+  else if(pressed_edge(Btn_Small_FWD))
+  {
+    stepper_motor_control_pas(STEP_FWD,200,50,1);
+    pas+=1;
+  }
+  else if(pressed_edge(Btn_Small_REV))
+  {
+    stepper_motor_control_pas(STEP_REV,200,50,1);
+    pas-=1;
+  }else{
+    stepper_stop();
+  }
+  return pas;
+} 
+void button_control_servo_motor(){
+  if(pressed_edge(Btn_Shutter)){
+    if(Shutter_Open){
+      servo_close();
+      Shutter_Open= 0;
+    }else{
+      servo_open();
+      Shutter_Open= 1;
+    }
+  }
+} 
+void initialisation_position(){
+  stepper_motor_control_pas(STEP_REV,200,50,340);
+}
+void button_reset_position(){
+  if(pressed_edge(Btn_Reset)){
 }
 /* =========================================================
    MAIN TEST 
@@ -150,8 +208,9 @@ void setup() {
   servo_init();
   stepper_init();
   cap_init();
+  Init_Btn();
+  initialisation_position();
 }
-
 void loop() {
   // ---- Test 1: shutter open/close
   /*servo_close();
@@ -160,9 +219,9 @@ void loop() {
   delay(3000);*/
 
   // ---- Test 2: stepper forward/back
-  bool limit1 = false;
-  limit1=is_limit_cap1_pressed();
-  stepper_motor_control_pas(STEP_REV,200,100,200);//un cercle
+  /*bool limit1 = false;
+  limit1=is_limit_capREV_pressed();
+  stepper_motor_control_pas(STEP_REV,200,100,200);//un cercle*/
   //delay(2000);
   /*stepper_stop();
   delay(5000);
@@ -172,4 +231,9 @@ void loop() {
  /*for (int i = 0; i < 20; i++) stepper_step_reverse(400, 300);
   stepper_stop();
   delay(2000);*/
+  /*logique test*/
+  counter_pas = button_control_stepper_motor(counter_pas);
+  printf(counter_pas);
+
+  button_control_servo_motor(); 
 }
