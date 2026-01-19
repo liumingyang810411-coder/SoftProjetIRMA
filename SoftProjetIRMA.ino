@@ -19,6 +19,7 @@ bool Shutter_Open = 0;
 /*******************************CAPTEURS*****************************/
 static const uint8_t cap_REV  = 2;
 static const uint8_t cap_FWD  = 4;
+static const uint8_t cap_Shutter = A0;
 /****************************bouton***************************/
 static const uint8_t Btn_Small_FWD  = A3;
 static const uint8_t Btn_Small_REV  = A2;
@@ -40,6 +41,9 @@ bool is_limit_capREV_pressed() {
 bool is_limit_capFWD_pressed() {
   return digitalRead(cap_FWD)==LOW;
 }
+bool is_limit_capShutter_pressed() {
+  return digitalRead(cap_Shutter)==LOW;
+}
 /* =========================================================
    bouton CONTROL
    ========================================================= */
@@ -49,6 +53,7 @@ void Init_Btn(){
   pinMode(Btn_Small_FWD, INPUT_PULLUP);
   pinMode(Btn_Small_REV, INPUT_PULLUP);
   pinMode(Btn_Shutter,   INPUT_PULLUP);
+  pinMode(Shutter_Led, OUTPUT);
 }
 bool btn_pressed(int btn){
   return (digitalRead(btn)==LOW);
@@ -177,12 +182,14 @@ void button_control_stepper_motor(){
 } 
 void button_control_servo_motor(){
   if(pressed_edge(Btn_Shutter)){
-    if(Shutter_Open){
+    if(Shutter_Open & (is_limit_capShutter_pressed()==0)){
       servo_close();
       Shutter_Open= 0;
+      digitalWrite(Shutter_Led, HIGH);
     }else{
       servo_open();
       Shutter_Open= 1;
+      digitalWrite(Shutter_Led, LOW);
     }
   }
 } 
