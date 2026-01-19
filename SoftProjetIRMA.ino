@@ -197,7 +197,7 @@ void reset_position(){
   }
 }
 float calcul_position(int pas,int position_act){
-  return pas * 0.56+position_act;
+  return float(pas) * 0.56+float(position_act);
 }
 /* =========================================================
    MAIN TEST 
@@ -211,7 +211,7 @@ void setup() {
 }
 void loop() {
   // ---- Test 1: shutter open/close
-  button_reset_position();
+  reset_position();
   button_control_stepper_motor();
   position_act=calcul_position(counter_pas,position_act);
   button_control_servo_motor(); 
