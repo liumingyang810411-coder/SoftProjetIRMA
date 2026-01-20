@@ -5,7 +5,7 @@ enum StepDir : uint8_t {
 };
 
 /* =========================================================
-   PINMAP (Motor Shield Rev3 固定占用)
+   PINMAP (Motor Shield Rev3 )
    ========================================================= */
 static const uint8_t PWM_A   = 3;   // Motor A speed (PWM)
 static const uint8_t DIR_A   = 12;  // Motor A direction
@@ -128,7 +128,6 @@ void stepper_one_step(StepDir dir, uint8_t pwm, uint16_t dt_ms){
 void stepper_motor_control_pas(StepDir dir, uint8_t pwm, uint16_t dt_ms,int pas){
   if(dir==STEP_FWD){
     for (int i = 0; i < pas; i++){
-     //stepper_step_forward(200, 1000);
       if(is_limit_capFWD_pressed()==0){
         stepper_one_step(dir, pwm, dt_ms);
         //delay(3000);
@@ -137,10 +136,8 @@ void stepper_motor_control_pas(StepDir dir, uint8_t pwm, uint16_t dt_ms,int pas)
         break;}}
   }else{
     for (int i = 0; i < pas; i++){
-     //stepper_step_forward(200, 1000);
       if(is_limit_capREV_pressed()==0){
         stepper_one_step(dir, pwm, dt_ms);
-        //delay(3000);
        }else{
         stepper_stop();
         break;}}
@@ -155,29 +152,64 @@ static const uint8_t vitesse = 30;
 static const uint8_t big_step = 17;
 int counter_pas =0;
 float position_act=0;
-bool pressed_edge(uint8_t pin) {
-  static uint8_t last[30]; 
+
+bool pressed_edge(uint8_t pin, unsigned long cooldown_ms = 300) {
+  static uint8_t last_state[30];
+  static unsigned long last_time[30];
   uint8_t cur = digitalRead(pin);
-  bool edge = (last[pin] == HIGH && cur == LOW);
-  last[pin] = cur;
-  delay(20); 
+  unsigned long now = millis();
+  bool edge = false;
+  if (last_state[pin] == HIGH && cur == LOW) {
+    if (now - last_time[pin] >= cooldown_ms) {
+      edge = true;
+      last_time[pin] = now; 
+    }
+  }
+  last_state[pin] = cur;
   return edge;
-}  
+}
+void initialisation_position(){
+  stepper_motor_control_pas(STEP_REV,200,50,340);
+}
+void reset_position(){
+  if(pressed_edge(Btn_Big_FWD) & pressed_edge(Btn_Big_REV)){
+    initialisation_position();
+    counter_pas=0;
+    position_act=0;
+  }
+}
+bool only_one_button_pressed() {
+  int count = 0;
+  if (digitalRead(Btn_Small_FWD) == LOW) count++;
+  if (digitalRead(Btn_Small_REV) == LOW) count++;
+  if (digitalRead(Btn_Big_FWD)   == LOW) count++;
+  if (digitalRead(Btn_Big_REV)   == LOW) count++;
+  return (count == 1);
+}
 void button_control_stepper_motor(){
+  if (!only_one_button_pressed()) {
+    stepper_stop();
+    reset_position();
+    return;}
   if(pressed_edge(Btn_Big_FWD)){
     stepper_motor_control_pas(STEP_FWD,PWM,vitesse,big_step);
-    counter_pas+=17;
+    counter_pas+=big_step;
+    return;
   }else if(pressed_edge(Btn_Big_REV)){
     stepper_motor_control_pas(STEP_REV,PWM,vitesse,big_step);
-    counter_pas-=17;
+    counter_pas-=big_step;
+    return;
   }else if(pressed_edge(Btn_Small_FWD)){
     stepper_motor_control_pas(STEP_FWD,PWM,vitesse,1);
     counter_pas+=1;
+    return;
     }else if(pressed_edge(Btn_Small_REV)){
     stepper_motor_control_pas(STEP_REV,PWM,vitesse,1);
     counter_pas-=1;
+    return;
   }else{
     stepper_stop();
+    return;
   }
 } 
 void button_control_servo_motor(){
@@ -193,16 +225,8 @@ void button_control_servo_motor(){
     }
   }
 } 
-void initialisation_position(){
-  stepper_motor_control_pas(STEP_REV,200,50,340);
-}
-void reset_position(){
-  if(pressed_edge(Btn_Big_FWD) & pressed_edge(Btn_Big_REV)){
-    initialisation_position();
-    counter_pas=0;
-    position_act=0;
-  }
-}
+
+
 float calcul_position(int pas,int position_act){
   return float(pas) * 0.56+float(position_act);
 }
@@ -218,7 +242,6 @@ void setup() {
 }
 void loop() {
   // ---- Test 1: shutter open/close
-  reset_position();
   button_control_stepper_motor();
   position_act=calcul_position(counter_pas,position_act);
   button_control_servo_motor(); 
