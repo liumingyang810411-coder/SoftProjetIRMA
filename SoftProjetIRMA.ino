@@ -1,9 +1,10 @@
 #include <Servo.h>
+#include <LiquidCrystal_I2C.h>
+
 enum StepDir : uint8_t {
   STEP_FWD = 1,
   STEP_REV = 0
 };
-
 /* =========================================================
    PINMAP (Motor Shield Rev3 )
    ========================================================= */
@@ -13,20 +14,20 @@ static const uint8_t BRAKE_A = 9;   // Motor A brake
 static const uint8_t PWM_B   = 11;  // Motor B speed (PWM)
 static const uint8_t DIR_B   = 13;  // Motor B direction
 static const uint8_t BRAKE_B = 8;   // Motor B brake
-// +*****************************Servo pin ***************************/
+// +*****************************Servo pin *****************/
 static const uint8_t SERVO_PIN = 5;
 bool Shutter_Open = 0;
-/*******************************CAPTEURS*****************************/
+/*******************************CAPTEURS********************/
 static const uint8_t cap_REV  = 2;
 static const uint8_t cap_FWD  = 4;
-static const uint8_t cap_Shutter = A0;
-/****************************bouton***************************/
+static const uint8_t cap_Shutter = A0;//couper apres
+/****************************bouton************************/
 static const uint8_t Btn_Small_FWD  = A3;
 static const uint8_t Btn_Small_REV  = A2;
 static const uint8_t Btn_Big_FWD  = 10;
 static const uint8_t Btn_Big_REV  = 6;
 static const uint8_t Btn_Shutter  = 7;
-static const uint8_t Shutter_Led  = A1;
+static const uint8_t Shutter_Led  = A1;//couper apres
 /*****************************************************************/
 /*=====================================================
                   capteur control                
@@ -58,6 +59,22 @@ void Init_Btn(){
 bool btn_pressed(int btn){
   return (digitalRead(btn)==LOW);
 }
+/* =========================================================
+   LCD screen CONTROL
+   ========================================================= */
+LiquidCrystal_I2C lcd(0x27, 16, 2);//taille de l'ecran a preciser
+void lcd_init() {
+  Wire.begin();
+  lcd.init();
+  lcd.backlight();
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("IRMA Ready");
+  lcd.setCursor(0, 1);
+  lcd.print("Init...");
+}
+
+
 /* =========================================================
    SERVO CONTROL
  ========================================================= */
@@ -226,9 +243,34 @@ void button_control_servo_motor(){
   }
 } 
 
-
+static const float Distance  = 0.56;//il faut mesurer precisement apres
 float calcul_position(int pas,int position_act){
-  return float(pas) * 0.56+float(position_act);
+  return float(pas) * Distance +float(position_act);
+}
+/*logique screen*/
+void lcd_update() {
+  static unsigned long last = 0;
+  unsigned long now = millis();
+  if (now - last < 200) return;   
+  last = now;
+  lcd.setCursor(0, 0);
+  lcd.print("Pos:");
+  lcd.print(position_act, 1);     
+  lcd.print(" ");
+  lcd.print(Shutter_Open ? "OPEN " : "CLOSE");
+
+  lcd.setCursor(0, 1);
+  lcd.print("st:");
+  lcd.print(counter_pas);
+  lcd.print(" ");
+
+  lcd.print("F");
+  lcd.print(is_limit_capFWD_pressed() ? "1" : "0");
+  lcd.print("R");
+  lcd.print(is_limit_capREV_pressed() ? "1" : "0");
+  lcd.print("S");
+  lcd.print(is_limit_capShutter_pressed() ? "1" : "0");
+  lcd.print("   ");
 }
 /* =========================================================
    MAIN TEST 
@@ -237,12 +279,13 @@ void setup() {
   servo_init();
   stepper_init();
   cap_init();
+  lcd_init();
   Init_Btn();
   initialisation_position();
 }
 void loop() {
-  // ---- Test 1: shutter open/close
   button_control_stepper_motor();
   position_act=calcul_position(counter_pas,position_act);
   button_control_servo_motor(); 
+  lcd_update();
 }
