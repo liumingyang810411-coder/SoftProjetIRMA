@@ -1,6 +1,7 @@
 #include <Servo.h>
 #include <LiquidCrystal_I2C.h>
-
+#include <Wire.h>
+#include "lib_I2CLCD.h"  
 enum StepDir : uint8_t {
   STEP_FWD = 1,
   STEP_REV = 0
@@ -35,6 +36,7 @@ static const uint8_t Shutter_Led  = A1;//couper apres
 void cap_init(){
   pinMode(cap_REV,INPUT_PULLUP);
   pinMode(cap_FWD,INPUT_PULLUP);
+  pinMode(cap_Shutter,INPUT_PULLUP);
 }
 bool is_limit_capREV_pressed() {
   return digitalRead(cap_REV)==LOW;
@@ -59,21 +61,6 @@ void Init_Btn(){
 bool btn_pressed(int btn){
   return (digitalRead(btn)==LOW);
 }
-/* =========================================================
-   LCD screen CONTROL
-   ========================================================= */
-LiquidCrystal_I2C lcd(0x27, 16, 2);//taille de l'ecran a preciser
-void lcd_init() {
-  Wire.begin();
-  lcd.init();
-  lcd.backlight();
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("IRMA Ready");
-  lcd.setCursor(0, 1);
-  lcd.print("Init...");
-}
-
 
 /* =========================================================
    SERVO CONTROL
@@ -247,30 +234,68 @@ static const float Distance  = 0.56;//il faut mesurer precisement apres
 float calcul_position(int pas,int position_act){
   return float(pas) * Distance +float(position_act);
 }
-/*logique screen*/
-void lcd_update() {
-  static unsigned long last = 0;
+/* =========================================================
+   LCD Screen
+   =========================================================*/
+static const unsigned long LCD_PERIOD_MS = 200;
+static unsigned long lcd_last_ms = 0;
+static char lcd_line0[21] = {0};
+static char lcd_line1[21] = {0};
+static void lcd_make_line(char out[21], const String& s) {
+  int len = s.length();
+  for (int i = 0; i < 20; i++) {
+    out[i] = (i < len) ? s[i] : ' ';
+  }
+  out[20] = '\0';
+}
+static void lcd_update_line(uint8_t row, char newLine[21], char oldLine[21]) {
+  if (strcmp(newLine, oldLine) == 0) return;
+  locateCursorLCD(0, row);
+  printDisplayLCD(String(newLine));   
+  strcpy(oldLine, newLine);
+}
+void lcd_init_irma() {
+  Wire.begin();
+  initLCD();
+  clearDisplayLCD();
+  cursorOFF();
+  locateCursorLCD(0,0);
+  printDisplayLCD("IRMA READY");
+  locateCursorLCD(0,1);
+  printDisplayLCD("LCD @0x3C");
+  delay(800);
+  clearDisplayLCD();
+  strcpy(lcd_line0, "");
+  strcpy(lcd_line1, "");
+}
+void lcd_update_irma() {
   unsigned long now = millis();
-  if (now - last < 200) return;   
-  last = now;
-  lcd.setCursor(0, 0);
-  lcd.print("Pos:");
-  lcd.print(position_act, 1);     
-  lcd.print(" ");
-  lcd.print(Shutter_Open ? "OPEN " : "CLOSE");
+  if (now - lcd_last_ms < LCD_PERIOD_MS) return;
+  lcd_last_ms = now;
 
-  lcd.setCursor(0, 1);
-  lcd.print("st:");
-  lcd.print(counter_pas);
-  lcd.print(" ");
+  bool limREV     = (digitalRead(cap_REV) == LOW);
+  bool limFWD     = (digitalRead(cap_FWD) == LOW);
+  bool shutClosed = (digitalRead(cap_Shutter) == LOW);
 
-  lcd.print("F");
-  lcd.print(is_limit_capFWD_pressed() ? "1" : "0");
-  lcd.print("R");
-  lcd.print(is_limit_capREV_pressed() ? "1" : "0");
-  lcd.print("S");
-  lcd.print(is_limit_capShutter_pressed() ? "1" : "0");
-  lcd.print("   ");
+  String l0 = "Pos:";
+  l0 += String(position_act, 1);
+  l0 += "cm ";
+  while (l0.length() < 12) l0 += " ";
+  l0 += "N:";
+  l0 += String(counter_pas);
+
+
+  l1 += " CL:";
+  l1 += (shutClosed ? "1" : "0");
+  l1 += " R";
+  l1 += (limREV ? "1" : "0");
+  l1 += " F";
+  l1 += (limFWD ? "1" : "0");
+  char new0[21], new1[21];
+  lcd_make_line(new0, l0);
+  lcd_make_line(new1, l1);
+  lcd_update_line(0, new0, lcd_line0);
+  lcd_update_line(1, new1, lcd_line1);
 }
 /* =========================================================
    MAIN TEST 
@@ -279,13 +304,13 @@ void setup() {
   servo_init();
   stepper_init();
   cap_init();
-  lcd_init();
   Init_Btn();
   initialisation_position();
+  lcd_init_irma();
 }
 void loop() {
   button_control_stepper_motor();
   position_act=calcul_position(counter_pas,position_act);
   button_control_servo_motor(); 
-  lcd_update();
+  lcd_update_irma();
 }
