@@ -6,23 +6,23 @@ enum StepDir : uint8_t {
   STEP_FWD = 1,
   STEP_REV = 0
 };
-/* =========================================================
+/* ==============================================================
    PINMAP (Motor Shield Rev3 )
-   ========================================================= */
+   ==============================================================*/
 static const uint8_t PWM_A   = 3;   // Motor A speed (PWM)
 static const uint8_t DIR_A   = 12;  // Motor A direction
 static const uint8_t BRAKE_A = 9;   // Motor A brake
 static const uint8_t PWM_B   = 11;  // Motor B speed (PWM)
 static const uint8_t DIR_B   = 13;  // Motor B direction
 static const uint8_t BRAKE_B = 8;   // Motor B brake
-// +*****************************Servo pin *****************/
+// +*****************************Servo pin **********************/
 static const uint8_t SERVO_PIN = 5;
 bool Shutter_Open = 0;
-/*******************************CAPTEURS********************/
+/*******************************CAPTEURS*************************/
 static const uint8_t cap_REV  = 2;
 static const uint8_t cap_FWD  = 4;
 static const uint8_t cap_Shutter = A0;//couper apres
-/****************************bouton************************/
+/****************************bouton******************************/
 static const uint8_t Btn_Small_FWD  = A3;
 static const uint8_t Btn_Small_REV  = A2;
 static const uint8_t Btn_Big_FWD  = 10;
@@ -61,7 +61,6 @@ void Init_Btn(){
 bool btn_pressed(int btn){
   return (digitalRead(btn)== LOW);
 }
-
 /* =========================================================
    SERVO CONTROL
  ========================================================= */
@@ -84,6 +83,10 @@ void servo_open() {
 /* =========================================================
    STEPPER CONTROL (via Motor Shield L298P)
    ========================================================= */
+static const uint8_t PWM = 200;
+static const uint8_t vitesse = 30;
+static const uint8_t big_step = 17;
+static float position_act=0;
 void stepper_init() {
   pinMode(DIR_A, OUTPUT);
   pinMode(PWM_A, OUTPUT);
@@ -91,7 +94,6 @@ void stepper_init() {
   pinMode(DIR_B, OUTPUT);
   pinMode(PWM_B, OUTPUT);
   pinMode(BRAKE_B, OUTPUT);
-  // stop both channels
   digitalWrite(BRAKE_A, HIGH);
   digitalWrite(BRAKE_B, HIGH);
   analogWrite(PWM_A, 0);
@@ -129,30 +131,46 @@ void stepper_one_step(StepDir dir, uint8_t pwm, uint16_t dt_ms){
   }
   delay(dt_ms);
 }
+static const uint8_t HOLD_PWM = 100; 
+void stepper_hold() {
+  switch(phase){
+    case 0: stepper_phase_A(true,  HOLD_PWM); break; // A+
+    case 1: stepper_phase_B(true,  HOLD_PWM); break; // B+
+    case 2: stepper_phase_A(false, HOLD_PWM); break; // A-
+    case 3: stepper_phase_B(false, HOLD_PWM); break; // B-
+  }
+}
 int counter_pas =0;
+static const float Distance  = 0.56;//il faut mesurer precisement apres
+/*float calcul_position(int pas){
+  return float(pas) * Distance ;
+}*/
 void stepper_motor_control_pas(StepDir dir, uint8_t pwm, uint16_t dt_ms,int pas){
   if(dir==STEP_FWD){
     for (int i = 0; i < pas; i++){
       if(is_limit_capFWD_pressed()==0){
-        stepper_one_step(dir, pwm, dt_ms);
-        //delay(3000);
-        counter_pas-=1;
+         stepper_one_step(dir, pwm, dt_ms);
+         counter_pas-=1;
+         position_act-=Distance;
        }else{
-        stepper_stop();
-        break;
-      }       
-        print();
+         stepper_stop();       
+         break;
+      } 
+        stepper_stop();   
  }
   }else{
     for (int i = 0; i < pas; i++){
       if(is_limit_capREV_pressed()==0){
-        stepper_one_step(dir, pwm, dt_ms);
-        counter_pas+=1;
+         stepper_one_step(dir, pwm, dt_ms);
+         counter_pas +=1;
+         position_act +=Distance;
        }else{
         stepper_stop();
+        counter_pas=0;
+        position_act=0;
         break;
-        }       
-        print();
+        }  
+        stepper_stop();     
      }
   }
   stepper_stop();
@@ -160,12 +178,6 @@ void stepper_motor_control_pas(StepDir dir, uint8_t pwm, uint16_t dt_ms,int pas)
 /*==================================================================
     logique
 ====================================================================*/ 
-static const uint8_t PWM = 200;
-static const uint8_t vitesse = 30;
-static const uint8_t big_step = 17;
-
-float position_act=0;
-
 bool pressed_edge(uint8_t pin) {
   static uint8_t last_state[30];
   uint8_t cur = digitalRead(pin);
@@ -191,15 +203,10 @@ bool only_one_button_pressed() {
   if (digitalRead(Btn_Big_REV)   == HIGH) count++;
   return (count == 1);
 }
-static const float Distance  = 0.56;//il faut mesurer precisement apres
-float calcul_position(int pas){
-  return float(pas) * Distance ;
-}
 void print(){
-  Serial.print("counter_pas = ");
+  Serial.print("step_now= ");
   Serial.println(counter_pas);
-  position_act=calcul_position(counter_pas);
-  Serial.print("position_act = ");
+  Serial.print("position_cal= ");
   Serial.println(position_act, 2); 
 }
 void button_control_stepper_motor(){
@@ -211,23 +218,26 @@ void button_control_stepper_motor(){
     stepper_stop();
     Serial.print("reinitialisation ;");
     reset_position();
-    print();
     return;
   }  
   if(pressed_edge(Btn_Big_FWD)){
     stepper_motor_control_pas(STEP_FWD,PWM,vitesse,big_step);
+    stepper_stop();
     return;
   }else if(pressed_edge(Btn_Big_REV)){
     stepper_motor_control_pas(STEP_REV,PWM,vitesse,big_step);
+    stepper_stop();
     return;
   }else if(pressed_edge(Btn_Small_FWD)){
     stepper_motor_control_pas(STEP_FWD,PWM,vitesse,1);
+    stepper_stop();
     return;
     }else if(pressed_edge(Btn_Small_REV)){
     stepper_motor_control_pas(STEP_REV,PWM,vitesse,1);
+    stepper_stop();
     return;
   }else{
-    stepper_stop();
+    stepper_hold();
     return;
   }
 } 
@@ -236,14 +246,19 @@ void button_control_servo_motor(){
     if(Shutter_Open){
       servo_close();
       Shutter_Open= 0;
-      digitalWrite(Shutter_Led, HIGH);
     }else{
       servo_open();
       Shutter_Open= 1;
-      digitalWrite(Shutter_Led, LOW);
     }
   }
 } 
+void LED_Shutter(){
+  if(is_limit_capShutter_pressed()){
+    digitalWrite(Shutter_Led, HIGH);
+  }else{
+    digitalWrite(Shutter_Led, LOW);
+  }
+}
 /* =========================================================
    LCD Screen
    =========================================================*/
@@ -285,20 +300,12 @@ void lcd_update_irma() {
   bool limREV     = (digitalRead(cap_REV) == LOW);
   bool limFWD     = (digitalRead(cap_FWD) == LOW);
   bool shutClosed = (digitalRead(cap_Shutter) == LOW);
-
-  String l0 = "Pos:";
-  l0 += String(position_act, 1);
-  l0 += "cm ";
+  String l0 = "Position: ";
+  l0 += String(float(-position_act/10.00), 3);
+  l0 += " cm ";
   while (l0.length() < 12) l0 += " ";
-  l0 += "N:";
-  l0 += String(counter_pas);
-
-  String l1 = "CL:";
-  l1 += (shutClosed ? "1" : "0");
-  l1 += " R";
-  l1 += (limREV ? "1" : "0");
-  l1 += " F";
-  l1 += (limFWD ? "1" : "0");
+  String l1 = "Shutter: ";
+  l1 += (shutClosed ? "CLOSE" : "OPEN");
   char new0[21], new1[21];
   lcd_make_line(new0, l0);
   lcd_make_line(new1, l1);
@@ -316,14 +323,13 @@ void setup() {
   stepper_init();
   cap_init();
   Init_Btn();
-  //initialisation_position();
+  initialisation_position();
   lcd_init_irma();
   Serial.println("Hello ");
 }
 void loop() {
-  counter_last= counter_pas;
+  LED_Shutter();
   button_control_stepper_motor();
-  
   button_control_servo_motor();
-  //lcd_update_irma();
+  lcd_update_irma();
 }
