@@ -84,7 +84,7 @@ void servo_open() {
    STEPPER CONTROL (via Motor Shield L298P)
    ========================================================= */
 static const uint8_t PWM = 200;
-static const uint8_t vitesse = 30;
+static const uint8_t vitesse = 40;
 static const uint8_t big_step = 17;
 static float position_act=0;
 void stepper_init() {
@@ -112,10 +112,12 @@ void stepper_phase_B(bool dir, uint8_t pwm) {
   analogWrite(PWM_B, pwm);
 }
 void stepper_stop() {
-  analogWrite(PWM_A, 0);
-  analogWrite(PWM_B, 0);
   digitalWrite(BRAKE_A, HIGH);
   digitalWrite(BRAKE_B, HIGH);
+  /*digitalWrite(DIR_A, HIGH);
+  digitalWrite(DIR_B, HIGH);*/
+  analogWrite(PWM_A, 0);
+  analogWrite(PWM_B, 0);
 }
 static uint8_t phase = 0; // 0..3
 void stepper_one_step(StepDir dir, uint8_t pwm, uint16_t dt_ms){
@@ -131,15 +133,15 @@ void stepper_one_step(StepDir dir, uint8_t pwm, uint16_t dt_ms){
   }
   delay(dt_ms);
 }
-static const uint8_t HOLD_PWM = 100; 
-void stepper_hold() {
+static const uint8_t HOLD_PWM = 10; 
+/*void stepper_hold() {
   switch(phase){
     case 0: stepper_phase_A(true,  HOLD_PWM); break; // A+
     case 1: stepper_phase_B(true,  HOLD_PWM); break; // B+
     case 2: stepper_phase_A(false, HOLD_PWM); break; // A-
     case 3: stepper_phase_B(false, HOLD_PWM); break; // B-
   }
-}
+}*/
 int counter_pas =0;
 static const float Distance  = 0.56;//il faut mesurer precisement apres
 /*float calcul_position(int pas){
@@ -156,7 +158,7 @@ void stepper_motor_control_pas(StepDir dir, uint8_t pwm, uint16_t dt_ms,int pas)
          stepper_stop();       
          break;
       } 
-        stepper_stop();   
+         stepper_stop();   
  }
   }else{
     for (int i = 0; i < pas; i++){
@@ -209,6 +211,7 @@ void print(){
   Serial.print("position_cal= ");
   Serial.println(position_act, 2); 
 }
+static bool stop_flag=1;
 void button_control_stepper_motor(){
   /*if (!only_one_button_pressed()) {
     stepper_stop();
@@ -222,23 +225,30 @@ void button_control_stepper_motor(){
   }  
   if(pressed_edge(Btn_Big_FWD)){
     stepper_motor_control_pas(STEP_FWD,PWM,vitesse,big_step);
-    stepper_stop();
+    stop_flag=1;
+   //stepper_stop();
     return;
   }else if(pressed_edge(Btn_Big_REV)){
     stepper_motor_control_pas(STEP_REV,PWM,vitesse,big_step);
-    stepper_stop();
+    stop_flag=1;
+   // stepper_stop();
     return;
   }else if(pressed_edge(Btn_Small_FWD)){
     stepper_motor_control_pas(STEP_FWD,PWM,vitesse,1);
-    stepper_stop();
+    stop_flag=1;
+    //stepper_stop();
     return;
     }else if(pressed_edge(Btn_Small_REV)){
     stepper_motor_control_pas(STEP_REV,PWM,vitesse,1);
-    stepper_stop();
+    stop_flag=1;
+    //stepper_stop();
     return;
   }else{
-    stepper_hold();
-    return;
+    if(stop_flag==1){
+      stepper_stop();
+      stop_flag=0;
+    }
+      return;
   }
 } 
 void button_control_servo_motor(){
@@ -249,8 +259,7 @@ void button_control_servo_motor(){
     }else{
       servo_open();
       Shutter_Open= 1;
-    }
-  }
+    }}
 } 
 void LED_Shutter(){
   if(is_limit_capShutter_pressed()){
@@ -330,6 +339,10 @@ void setup() {
 void loop() {
   LED_Shutter();
   button_control_stepper_motor();
+  if(is_limit_capREV_pressed()){
+    counter_pas=0;
+    position_act=0;
+  }
   button_control_servo_motor();
   lcd_update_irma();
 }
